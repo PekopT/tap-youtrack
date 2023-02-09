@@ -5,7 +5,7 @@ setup(
     name="tap-youtrack",
     version="0.33",
     description="Singer.io Youtrack tap",
-    author="Fahrenheit",
+    author="Farhrenheit",
     url="http://singer.io",
     classifiers=["Programming Language :: Python :: 3 :: Only"],
     py_modules=["tap_youtrack"],
@@ -15,7 +15,7 @@ setup(
         "requests",
         "decouple",
         "retry",
-        "json",
+        "pytz"
     ],
     entry_points="""
     [console_scripts]

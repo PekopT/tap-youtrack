@@ -244,7 +244,6 @@ class Connection(object):
         jam = {field:res[field] for field in schema['properties'].keys() if field in res.keys()}
 
         # write
-        #singer.write_record('issue_'+project.replace('-', ''), jam)
         singer.write_record('issue', jam)
 
 
@@ -275,7 +274,6 @@ class Connection(object):
         jam = {field:res[field] for field in self.HISTORY_SCHEMA['properties'].keys()}
     
         # write
-        #ts = self.convert_ts(datetime.timestamp())
         singer.write_record('activity', jam)
 
 
@@ -309,7 +307,6 @@ def run():
         issues = yt.parse_project_issues(project)
         if len(issues) == 0: continue
         schema = yt.generate_schema(map, simplified=True)
-        #singer.write_schema('issue_'+project.replace('-', ''), schema, 'id')
         singer.write_schema('issue', schema, key_properties=['id'])
 
         for issue in issues:

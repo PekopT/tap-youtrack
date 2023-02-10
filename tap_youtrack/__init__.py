@@ -185,6 +185,8 @@ class Connection(object):
             'state': 'string',
             'enum': 'string',
             'user': 'string',
+            'text': 'string',
+            'date': 'string',
             'float': 'number',
             'build': 'string',
             'period': 'number',
@@ -231,13 +233,14 @@ class Connection(object):
             'numberInProject': jas['numberInProject'],
             'resolved': self.convert_ts(jas['resolved'])
             }
-        
+
         # add custom fields to fill up
         for item in jas['customFields']:
-            res[item['name']] = item['value'] if type(item['value']) is not dict else item['value']['name']
             if type(item['value']) is not dict:
                 res[item['name']] = item['value'] if item['value'] else None
             else:
+                if 'MultiUserIssueCustomField' in item.values():
+                    res['item'] = ",".join([x['name'] for x in item['value']])
                 res[item['name']] = item['value']['name'] if item['value']['name'] else None
 
         # put jam in frame

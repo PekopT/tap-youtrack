@@ -264,10 +264,9 @@ class Connection(object):
             res['task_id'] = id
             res['author'] = ch['author']['login']
             res['field'] = ch['field']['name']
-            res['state'] = ch['added'] if isinstance((ch['added']),(str,type(None))) else ch['added'][0]['name']
-            res['prev_state'] = ch['removed'] if isinstance((ch['removed']),(str,type(None))) else ch['removed'][0]['name']
+            res['state'] = ch['added'] if not isinstance((ch['added']),list) else ch['added'][0]['name']
+            res['prev_state'] = ch['removed'] if not isinstance((ch['removed']),list) else ch['removed'][0]['name']
             res['timestamp'] = ch['timestamp']
-            
             res['datetime'] = self.convert_ts(ch['timestamp'])
             
         # grind

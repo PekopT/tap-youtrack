@@ -11,9 +11,9 @@ setup(
     py_modules=["tap_youtrack"],
     install_requires=[
         # NB: Pin these to a more specific version for tap reliability
+        "python-decouple",
         "singer-python",
         "requests",
-        "decouple",
         "retry",
         "pytz"
     ],

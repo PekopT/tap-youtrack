@@ -233,15 +233,15 @@ class Connection(object):
             'numberInProject': jas['numberInProject'],
             'resolved': self.convert_ts(jas['resolved'])
             }
-
+        
         # add custom fields to fill up
         for item in jas['customFields']:
-            if type(item['value']) is not dict:
-                res[item['name']] = item['value'] if item['value'] else None
-            else:
-                if 'MultiUserIssueCustomField' in item.values():
-                    res['item'] = ",".join([x['name'] for x in item['value']])
+            if type(item['value']) is list: # MultiUserIssueCustomField
+                res['name'] = ",".join([x['name'] for x in item['value']])
+            elif type(item['value']) is dict:
                 res[item['name']] = item['value']['name'] if item['value']['name'] else None
+            else:
+                res[item['name']] = item['value'] if item['value'] else None    
 
         # put jam in frame
         jam = {field:res[field] for field in schema['properties'].keys() if field in res.keys()}

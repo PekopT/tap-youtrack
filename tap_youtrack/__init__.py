@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import time
 import singer
 import requests
 from pytz import UTC
@@ -41,6 +42,7 @@ class Connection(object):
     def parse_projects(self):
         # get all project database id's
         self.r = requests.get(self.baseUrl+'/admin/projects/?fields=name,id', headers=self.headers)
+        LOGGER.info('Successful API auth') if self.r.status_code == 200 else LOGGER.warning('Unsuccessful Auth try')
         return {project['id']: project['name'] for project in self.r.json()}
 
 
@@ -208,6 +210,23 @@ class Connection(object):
         # get all issues id's for project
         self.r = requests.get(self.baseUrl+'/admin/projects/'+project+'/issues?$top=-1', headers=self.headers)
         return [issue['id'] for issue in self.r.json()]
+    
+    def root_transfer(self, project, schema, issues): 
+        i,ii = 0,0
+        batch_size = int(config('BATCH_SIZE'))
+        for issue in issues:
+            i+=1
+            self.transfer_issue(schema,issue)
+            if project not in config('HISTORY_EXCLUDE', cast=Csv()):
+                self.transfer_issue_activities(issue)
+            if  i % batch_size == 0:
+                i=0
+                ii+=1
+                LOGGER.info('Batch #%s done for %s. Overall parsed: %s.', ii, project, ii*batch_size)
+                LOGGER.info('Cooling down %ssec', int(config('BATCH_DELAY')))
+                time.sleep(int(config('BATCH_DELAY')))
+                LOGGER.info('Continue')
+        LOGGER.info('Parsing of project %s completed, overall tasks: %s', project, ii*batch_size+i)
 
 
     @retry(requests.exceptions.ConnectTimeout, tries=config('TRIES'), delay=2)
@@ -236,7 +255,7 @@ class Connection(object):
         
         # add custom fields to fill up
         for item in jas['customFields']:
-            if type(item['value']) is list: # MultiUserIssueCustomField
+            if type(item['value']) is list:
                 res['name'] = ",".join([x['name'] for x in item['value']])
             elif type(item['value']) is dict:
                 res[item['name']] = item['value']['name'] if item['value']['name'] else None
@@ -267,8 +286,8 @@ class Connection(object):
             res['task_id'] = id
             res['author'] = ch['author']['login']
             res['field'] = ch['field']['name']
-            res['state'] = ch['added'] if not isinstance((ch['added']),list) else ch['added'][0]['name']
-            res['prev_state'] = ch['removed'] if not isinstance((ch['removed']),list) else ch['removed'][0]['name']
+            res['state'] = ch['added'] if not isinstance((ch['added']),list) else ",".join([x['name'] for x in ch['added']])
+            res['prev_state'] = ch['removed'] if not isinstance((ch['removed']),list) else ",".join([x['name'] for x in ch['removed']])
             res['timestamp'] = ch['timestamp']
             res['datetime'] = self.convert_ts(ch['timestamp'])
             
@@ -310,12 +329,8 @@ def run():
         if len(issues) == 0: continue
         schema = yt.generate_schema(map, simplified=True)
         singer.write_schema('issue', schema, key_properties=['id'])
-
-        for issue in issues:
-            yt.transfer_issue(schema,issue)
-            if project in config('HISTORY_EXCLUDE', cast=Csv()): continue 
-            yt.transfer_issue_activities(issue)
-
+        yt.root_transfer(project, schema, issues)
+        LOGGER.info('')
 
 @utils.handle_top_exception(LOGGER)
 def main():

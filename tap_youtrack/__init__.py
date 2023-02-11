@@ -10,6 +10,7 @@ from datetime import datetime
 from decouple import config, Csv
 
 LOGGER = singer.get_logger()
+TRIES = int(config('TRIES'))
 
 class Connection(object):
 
@@ -38,15 +39,15 @@ class Connection(object):
         # task_id - author - field -  prev_state -  state - datetime
 
 
-    @retry(requests.exceptions.ConnectionError, tries=config('TRIES'), delay=2)
+    @retry(requests.exceptions.ConnectionError, tries=TRIES, delay=2)
     def parse_projects(self):
         # get all project database id's
         self.r = requests.get(self.baseUrl+'/admin/projects/?fields=name,id', headers=self.headers)
-        LOGGER.info('Successful API auth') if self.r.status_code == 200 else LOGGER.warning('Unsuccessful Auth try')
+        if self.r.status_code == 200: LOGGER.info('Successful API auth')
         return {project['id']: project['name'] for project in self.r.json()}
 
 
-    @retry(requests.exceptions.ConnectionError, tries=config('TRIES'), delay=2)
+    @retry(requests.exceptions.ConnectionError, tries=TRIES, delay=2)
     def parse_fields_values_types(self, simplified=False):
         # get all fields with data types, names, and project instances
         request = 'customFields?fields=fieldType(type,valueType),instances(project(id)),name'
@@ -205,31 +206,47 @@ class Connection(object):
         return jam
 
 
-    @retry(requests.exceptions.ConnectionError, tries=config('TRIES'), delay=2)
-    def parse_project_issues(self,project):
+    @retry(requests.exceptions.ConnectionError, tries=TRIES, delay=2)
+    def parse_project_issues(self,project,skip):
         # get all issues id's for project
-        self.r = requests.get(self.baseUrl+'/admin/projects/'+project+'/issues?$top=-1', headers=self.headers)
+        top = config('BATCH_SIZE')
+        self.r = requests.get(self.baseUrl+'/admin/projects/'+project+'/issues?$skip='+str(skip)+'&$top='+top,headers=self.headers)
+        if len(self.r.json()) > 0: LOGGER.info('Recieved batch of %s issues for %s, transferring...', len(self.r.json()),project)
         return [issue['id'] for issue in self.r.json()]
     
-    def root_transfer(self, project, schema, issues): 
-        i,ii = 0,0
+    def root_transfer(self, project, schema): 
+        a,i,b = 0,0,0 # activities, issues, batches
+        completed = False
         batch_size = int(config('BATCH_SIZE'))
-        for issue in issues:
-            i+=1
-            self.transfer_issue(schema,issue)
-            if project not in config('HISTORY_EXCLUDE', cast=Csv()):
-                self.transfer_issue_activities(issue)
-            if  i % batch_size == 0:
-                i=0
-                ii+=1
-                LOGGER.info('Batch #%s done for %s. Overall parsed: %s.', ii, project, ii*batch_size)
-                LOGGER.info('Cooling down %ssec', int(config('BATCH_DELAY')))
-                time.sleep(int(config('BATCH_DELAY')))
-                LOGGER.info('Continue')
-        LOGGER.info('Parsing of project %s completed, overall tasks: %s', project, ii*batch_size+i)
+        batch_delay = int(config('BATCH_DELAY'))
+        
+        while not completed:
+            
+            i = 0
+            issues = self.parse_project_issues(project,b*batch_size) # get new batch
+            if not issues and not b: return LOGGER.info('Skipping empty project: %s', project) # skip if empty
+            
+            for issue in issues:
+                i+=1
+                self.transfer_issue(schema,issue)
+                if project not in config('HISTORY_EXCLUDE', cast=Csv()):
+                    if self.transfer_issue_activities(issue): a+=1
+            
+            if  batch_delay and i == batch_size: # if we had any transfered issue
+                LOGGER.info('Batch iteration #%s done for %s. Overall parsed: %s.', b+1, project, b*batch_size+i)
+                LOGGER.info('Cooling down %ssec.', batch_delay)
+                time.sleep(batch_delay)
+            
+            if len(issues) < batch_size: # complete if batch was not full
+                completed = True 
+            else:
+                b+=1
+                if batch_delay: LOGGER.info('Continue')
+                
+        LOGGER.info('Parsing of project %s completed, overall tasks: %s, activities: %s \n', project, b*batch_size+i, a%100)
 
 
-    @retry(requests.exceptions.ConnectTimeout, tries=config('TRIES'), delay=2)
+    @retry(requests.exceptions.ConnectTimeout, tries=TRIES, delay=2)
     def transfer_issue(self,schema,id):           
         # main ETL loop for issue
         # get all necessary data for issue id
@@ -269,7 +286,7 @@ class Connection(object):
         singer.write_record('issue', jam)
 
 
-    @retry(requests.exceptions.ConnectTimeout, tries=config('TRIES'), delay=2)
+    @retry(requests.exceptions.ConnectTimeout, tries=TRIES, delay=2)
     def transfer_issue_activities(self,id):
         # main ETL loop for issue history
         res = {}
@@ -279,7 +296,7 @@ class Connection(object):
         self.r = requests.get(self.baseUrl+'/issues/'+id+'/activities?'+categories+'&'+fields, 
             headers=self.headers)
         changes = self.r.json()
-        if not changes: return
+        if not changes: return False
 
         # read
         for ch in changes:
@@ -296,6 +313,7 @@ class Connection(object):
     
         # write
         singer.write_record('activity', jam)
+        return True
 
 
 def discover():
@@ -325,12 +343,9 @@ def run():
 
         if project in config('PROJECT_EXCLUDE', cast=Csv()): continue
 
-        issues = yt.parse_project_issues(project)
-        if len(issues) == 0: continue
         schema = yt.generate_schema(map, simplified=True)
         singer.write_schema('issue', schema, key_properties=['id'])
-        yt.root_transfer(project, schema, issues)
-        LOGGER.info('')
+        yt.root_transfer(project, schema)
 
 @utils.handle_top_exception(LOGGER)
 def main():

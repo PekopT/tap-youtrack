@@ -189,7 +189,7 @@ class Connection(object):
             'enum': 'string',
             'user': 'string',
             'text': 'string',
-            'date': 'string',
+            'date': 'number',
             'float': 'number',
             'build': 'string',
             'period': 'number',

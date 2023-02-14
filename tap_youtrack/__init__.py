@@ -271,19 +271,22 @@ class Connection(object):
             }
         
         # add custom fields to fill up
-        for item in jas['customFields']:
-            if type(item['value']) is list:
-                res[item['name']] = ",".join([x['name'] for x in item['value']])
-            elif type(item['value']) is dict:
-                res[item['name']] = item['value']['name'] if ('name' in item['value'] and item['value']['name']) else None
-            else:
-                res[item['name']] = item['value'] if item['value'] else None    
+        try:
+            for item in jas['customFields']:
+                if type(item['value']) is list:
+                    res[item['name']] = ",".join([x['name'] for x in item['value']])
+                elif type(item['value']) is dict:
+                    res[item['name']] = item['value']['name'] if ('name' in item['value'] and item['value']['name']) else None
+                else:
+                    res[item['name']] = item['value'] if item['value'] else None    
 
-        # put jam in frame
-        jam = {field:res[field] for field in schema['properties'].keys() if field in res.keys()}
+            # put jam in frame
+            jam = {field:res[field] for field in schema['properties'].keys() if field in res.keys()}
 
-        # write
-        singer.write_record('issue', jam)
+            # write
+            singer.write_record('issue', jam)
+        except Exception as Ex:
+            LOGGER.error('Exception: %s raised for record: %s jam')
 
 
     @retry(requests.exceptions.ConnectTimeout, tries=TRIES, delay=2)

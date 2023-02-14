@@ -1,0 +1,4 @@
+venv
+tap_youtrack.egg-info
+build
+.idea

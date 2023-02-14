@@ -247,7 +247,7 @@ class Connection(object):
 
 
     @retry(requests.exceptions.ConnectTimeout, tries=TRIES, delay=2)
-    def transfer_issue(self,schema,id):           
+    def transfer_issue(self,schema,id):
         # main ETL loop for issue
         # get all necessary data for issue id
         fields = "id,idReadable,summary,project(name),created,resolved,updated,numberInProject"
@@ -273,9 +273,9 @@ class Connection(object):
         # add custom fields to fill up
         for item in jas['customFields']:
             if type(item['value']) is list:
-                res['name'] = ",".join([x['name'] for x in item['value']])
+                res[item['name']] = ",".join([x['name'] for x in item['value']])
             elif type(item['value']) is dict:
-                res[item['name']] = item['value']['name'] if item['value']['name'] else None
+                res[item['name']] = item['value']['name'] if ('name' in item['value'] and item['value']['name']) else None
             else:
                 res[item['name']] = item['value'] if item['value'] else None    
 

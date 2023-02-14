@@ -27,11 +27,11 @@ class Connection(object):
             ], 
             'additionalProperties': True, 
             'properties': {
-                'task_id': {'type': ['null', 'string']}, 
-                'author': {'type': ['null', 'string']}, 
+                'task_id': {'type': ['null', 'string']},
+                'author': {'type': ['null', 'string']},
                 'field': {'type': ['null', 'string']}, 
-                'prev_state': {'type': ['null', 'string']}, 
-                'state': {'type': ['null', 'string']},
+                'prev_state': {'type': ['null', 'string', 'number']}, 
+                'state': {'type': ['null', 'string', 'number']},
                 'datetime': {'format': 'date-time','type': ['null', 'string']},
                 'timestamp': {'type': ['number']}
             }
@@ -286,7 +286,7 @@ class Connection(object):
             # write
             singer.write_record('issue', jam)
         except Exception as Ex:
-            LOGGER.error('Exception: %s raised for record: %s jam')
+            LOGGER.error('Exception: %s raised for record: %s jam', Ex, jam)
 
 
     @retry(requests.exceptions.ConnectTimeout, tries=TRIES, delay=2)

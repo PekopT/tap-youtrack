@@ -75,10 +75,10 @@ class Connection:
 
         if simplified:
             for name, values in a.items():  # if field have any instance
-                if len(values[1]) > 0:
-                    b[name] = values[0]
+                b[name] = values[0]
             return b
 
+        # What's this? TO DO: to comment
         for name, values in a.items():
             pid = values[1][0]["project"]["id"] if len(values[1]) > 0 else None
             if pid not in b:
@@ -110,6 +110,8 @@ class Connection:
         # non-custom fields
         jam["timestamp"] = {"type": ["number"]}  # using as _seq_id to target-postgres
         jam["project"] = {"type": ["string"]}
+        jam["project_id"] = {"type": ["string"]}
+        jam["project_short_name"] = {"type": ["string"]}
         jam["id"] = {"type": ["string"]}
         jam["summary"] = {"type": ["string"]}
         jam["idReadable"] = {"type": ["string"]}
@@ -291,7 +293,7 @@ class Connection:
     def transfer_issue(self, schema, iid):
         # main ETL loop for issue
         # get all necessary data for issue id
-        fields = "id,idReadable,summary,project(name),created,resolved,updated,numberInProject"
+        fields = "id,idReadable,summary,project(id,name,shortName),created,resolved,updated,numberInProject"
         r = self.session.get(
             self.base_url
             + "/issues/"
@@ -307,6 +309,8 @@ class Connection:
         res = {
             "timestamp": jas["created"],  # used as target-postgres _seq_id
             "project": jas["project"]["name"],
+            "project_id": jas["project"]["id"],
+            "project_short_name": jas["project"]["shortName"],
             "id": jas["id"],
             "summary": jas["summary"],
             "idReadable": jas["idReadable"],

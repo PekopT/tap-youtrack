@@ -41,7 +41,17 @@ class Connection:
                 "timestamp": {"type": ["number"]},
             },
         }
-        # task_id - author - field -  prev_state -  state - datetime
+
+        self.link_schema = {
+            "type": ["null", "object"],
+            "additionalProperties": True,
+            "properties": {
+                "id": {"type": "string"},
+                "origin": {"type": "string"},
+                "link_type": {"type": "string"},
+                "relative": {"type": ["string", "array"]},
+            },
+        }
 
     @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
     def parse_projects(self):
@@ -56,7 +66,7 @@ class Connection:
         return {project["id"]: project["name"] for project in r.json()}
 
     @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
-    def parse_fields_values_types(self, simplified=False):
+    def parse_fields_values_types(self):
         # get all fields with data types, names, and project instances
         request = (
             "customFields?fields=fieldType(type,valueType),instances(project(id)),name"
@@ -73,20 +83,11 @@ class Connection:
         }
         b = {}  # mapping below >> {project_id:[{field_name:field_type}]}
 
-        if simplified:
-            for name, values in a.items():  # if field have any instance
-                b[name] = values[0]
-            return b
-
-        # What's this? TO DO: to comment
-        for name, values in a.items():
-            pid = values[1][0]["project"]["id"] if len(values[1]) > 0 else None
-            if pid not in b:
-                b[pid] = []
-            b[pid].append([name, values[0]])
+        for name, values in a.items():  # if field have any instance
+            b[name] = values[0]
         return b
 
-    def generate_schema(self, types_map, simplified=False):
+    def generate_schema(self, types_map):
         # build a schema for data stream
         schema = {
             "type": ["null", "object"],
@@ -97,12 +98,7 @@ class Connection:
         }
 
         # custom fields from map
-        if simplified:
-            raw_jam = {
-                key: {"type": ["null", value]} for key, value in types_map.items()
-            }
-        else:
-            raw_jam = {field[0]: {"type": ["null", field[1]]} for field in types_map}
+        raw_jam = {key: {"type": ["null", value]} for key, value in types_map.items()}
 
         # grind data types for custom fields
         jam = self.convert_data_types(raw_jam)
@@ -223,6 +219,31 @@ class Connection:
         return jam
 
     @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
+    def transfer_link(self, issue):
+        r = self.session.get(
+            self.base_url
+            + "/issues/"
+            + issue
+            + "/links/"
+            + "?fields=id,direction,linkType(sourceToTarget,targetToSource),issues(id)",
+            headers=self.headers,
+            allow_redirects=True,
+            timeout=5,
+        )
+        for link in r.json():
+            if link["issues"]:
+                jam = {
+                    "id": link["id"],
+                    "origin": issue,
+                    "link_type": link["linkType"]["sourceToTarget"]
+                    if link["direction"] != "INWARD"
+                    else link["linkType"]["targetToSource"],
+                    "relative": ",".join([l["id"] for l in link["issues"]]),
+                }
+                jam = {field: jam[field] for field in self.link_schema["properties"]}
+                singer.write_record("link", jam)
+
+    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
     def parse_project_issues(self, project, skip):
         # get all issues id's for project
         top = config("BATCH_SIZE")
@@ -262,6 +283,7 @@ class Connection:
             for issue in issues:
                 i += 1
                 self.transfer_issue(schema, issue)
+                self.transfer_link(issue)
                 if project not in config("HISTORY_EXCLUDE", cast=Csv()):
                     a += self.transfer_issue_activities(issue)
 
@@ -400,8 +422,8 @@ class Connection:
 
 def discover():
     yt = Connection(config("URL"), config("TOKEN"))
-    types_map = yt.parse_fields_values_types(simplified=True)
-    schema = yt.generate_schema(types_map, simplified=True)
+    types_map = yt.parse_fields_values_types()
+    schema = yt.generate_schema(types_map)
     catalog = yt.make_catalog(schema)
     return catalog
 
@@ -414,17 +436,18 @@ def run():
     projects = yt.parse_projects()
 
     # parse fields map
-    types_map = yt.parse_fields_values_types(simplified=True)
+    types_map = yt.parse_fields_values_types()
 
-    # create activity stream
+    # create activity & link streams
     singer.write_schema("activity", yt.history_schema, key_properties=["id"])
+    singer.write_schema("link", yt.link_schema, key_properties=["origin","link_type","relative"])
 
     # >>>>>
     for project in projects:
         if project in config("PROJECT_EXCLUDE", cast=Csv()):
             continue
 
-        schema = yt.generate_schema(types_map, simplified=True)
+        schema = yt.generate_schema(types_map)
         singer.write_schema("issue", schema, key_properties=["id"])
         yt.root_transfer(project, schema)
 

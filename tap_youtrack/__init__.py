@@ -440,7 +440,9 @@ def run():
 
     # create activity & link streams
     singer.write_schema("activity", yt.history_schema, key_properties=["id"])
-    singer.write_schema("link", yt.link_schema, key_properties=["origin","link_type","relative"])
+    singer.write_schema(
+        "link", yt.link_schema, key_properties=["origin", "link_type", "relative"]
+    )
 
     # >>>>>
     for project in projects:

@@ -220,6 +220,7 @@ class Connection:
 
     @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
     def transfer_link(self, issue):
+        # get all related tasks links
         r = self.session.get(
             self.base_url
             + "/issues/"

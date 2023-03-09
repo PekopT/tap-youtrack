@@ -37,3 +37,4 @@ Tested with Python 3.10, postgresql-14 and latest requirements.
    3. Boards 
 4. Improve activities parsing, consider using Activities Page https://www.jetbrains.com/help/youtrack/devportal/resource-api-activitiesPage.html
 5. Set up / fix parsing of `TextIssueCustomField` fields
+6. To be able to select entities to collect issues/activities/tags/users/boards 

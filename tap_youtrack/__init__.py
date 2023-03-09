@@ -233,16 +233,17 @@ class Connection:
         )
         for link in r.json():
             if link["issues"]:
-                jam = {
-                    "id": link["id"],
-                    "origin": issue,
-                    "link_type": link["linkType"]["sourceToTarget"]
-                    if link["direction"] != "INWARD"
-                    else link["linkType"]["targetToSource"],
-                    "relative": ",".join([l["id"] for l in link["issues"]]),
-                }
-                jam = {field: jam[field] for field in self.link_schema["properties"]}
-                singer.write_record("link", jam)
+                for l in link["issues"]:
+                    jam = {
+                        "id": link["id"],
+                        "origin": issue,
+                        "link_type": link["linkType"]["sourceToTarget"]
+                        if link["direction"] != "INWARD"
+                        else link["linkType"]["targetToSource"],
+                        "relative": l["id"],
+                    }
+                    jam = {field: jam[field] for field in self.link_schema["properties"]}
+                    singer.write_record("link", jam)
 
     @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
     def parse_project_issues(self, project, skip):

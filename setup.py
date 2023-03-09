@@ -6,7 +6,7 @@ setup(
     version="0.33",
     description="Singer.io Youtrack tap",
     author="Farhrenheit",
-    url="http://singer.io",
+    url="https://singer.io",
     classifiers=["Programming Language :: Python :: 3 :: Only"],
     py_modules=["tap_youtrack"],
     install_requires=[

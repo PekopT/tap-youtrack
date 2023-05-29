@@ -15,6 +15,7 @@ from decouple import config, Csv
 
 LOGGER = singer.get_logger()
 TRIES = int(config("TRIES"))
+DELAY = int(config("DELAY"))
 
 
 class Connection:
@@ -53,7 +54,7 @@ class Connection:
             },
         }
 
-    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
+    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=DELAY)
     def parse_projects(self):
         # get all project database id's
         r = self.session.get(
@@ -66,7 +67,7 @@ class Connection:
         # return {'0-11': 'Sample Project Name'}  # for testing
         return {project["id"]: project["name"] for project in r.json()}
 
-    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
+    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=DELAY)
     def parse_fields_values_types(self):
         # get all fields with data types, names, and project instances
         request = (
@@ -128,6 +129,23 @@ class Connection:
                         "type": "string",
                     },
                     "name": {
+                        "type": "string",
+                    }
+                }
+            }
+        }
+        jam["boards"] = {
+            "type": ["array", "null"],
+            "items": {
+                "type": "object",
+                "properties": {
+                    "sprint_id": {
+                        "type": "string",
+                    },
+                    "board_id": {
+                        "type": "string",
+                    },
+                    "board_name": {
                         "type": "string",
                     }
                 }
@@ -200,6 +218,40 @@ class Connection:
                         }
                     ],
                 },
+                # schema for agile board for future use
+                {
+                    "stream": "agile",
+                    "tap_stream_id": "agile_board",
+                    "schema": {
+                        "type": ["null", "object"],
+                        "additionalProperties": True,
+                        "properties": {
+                            "id": {"type": "string"},
+                            "name": {"type": "string"},
+                            "issues": {
+                                "type": ["array", "null"],
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "metadata": [
+                        {
+                            "metadata": {
+                                "table_name": "board",
+                                "schema": "public",
+                                "key_properties": ["id"],
+                                "incremental": True,
+                                "replication_method": "FULL_TABLE",
+                                "version": "1.0.0",
+                            }
+                        }
+                    ]
+                }
             ]
         }
         return json.dumps(catalog, indent=4)
@@ -236,7 +288,7 @@ class Connection:
 
         return jam
 
-    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
+    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=DELAY)
     def transfer_link(self, issue):
         # get all related tasks links
         r = self.session.get(
@@ -263,7 +315,7 @@ class Connection:
                     jam = {field: jam[field] for field in self.link_schema["properties"]}
                     singer.write_record("link", jam)
 
-    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
+    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=DELAY)
     def parse_project_issues(self, project, skip):
         # get all issues id's for project
         top = config("BATCH_SIZE")
@@ -331,7 +383,7 @@ class Connection:
             a,
         )
 
-    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
+    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=DELAY)
     def transfer_issue(self, schema, iid):
         # main ETL loop for issue
         # get all necessary data for issue id
@@ -376,20 +428,48 @@ class Connection:
                     )
                 else:
                     res[item["name"]] = item["value"] if item["value"] else None
-
-            # put jam in frame
-            jam = {
-                field: res[field]
-                for field in schema["properties"].keys()
-                if field in res
-            }
-
-            # write
-            singer.write_record("issue", jam)
         except Exception as Ex:
-            LOGGER.error("Exception: %s raised for record: %s jam", Ex, jam)
+            LOGGER.error("Exception: %s raised for record: %s jam", Ex, res)
 
-    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
+        try:
+            res["boards"] = self.get_issue_boards(iid)
+        except Exception as Ex:
+            LOGGER.error("Exception while getting boards: %s raised for record: %s jam", Ex, res)
+
+        # filtering out fields that are not in schema to avoid table pollution from fields we don't need (yet)
+        result = {
+            field: res[field]
+            for field in schema["properties"].keys()
+            if field in res
+        }
+        singer.write_record("issue", result)
+
+    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=DELAY)
+    def get_issue_boards(self, iid):
+        r = self.session.get(
+            self.base_url
+            + "/issues/"
+            + iid
+            + "/sprints/"
+            + ("?fields=agile(id,name,sprintsSettings(disableSprints)),id,name"),
+            headers=self.headers,
+            allow_redirects=True,
+            timeout=5,
+        )
+        jas = json.loads(r.text)
+
+        boards = []
+
+        for sprint in jas:
+            boards.append(dict(
+                sprint_id=sprint["id"],
+                board_id=sprint["agile"]["id"],
+                board_name=sprint["agile"]["name"],
+            ))
+
+        return boards
+
+    @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=DELAY)
     def transfer_issue_activities(self, iid):
         # main ETL loop for issue history
         res = {}

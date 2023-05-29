@@ -63,6 +63,7 @@ class Connection:
         )
         if r.status_code == 200:
             LOGGER.info("Successful API auth")
+        # return {'0-11': 'Sample Project Name'}  # for testing
         return {project["id"]: project["name"] for project in r.json()}
 
     @retry((exc.ConnectTimeout, exc.ConnectionError), tries=TRIES, delay=2)
@@ -115,6 +116,23 @@ class Connection:
         jam["resolved"] = {"type": ["null", "string"], "format": "date-time"}
         jam["updated"] = {"type": ["null", "string"], "format": "date-time"}
         jam["numberInProject"] = {"type": ["number"]}
+        jam["tags"] = {
+            "type": ["array", "null"],
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                    },
+                    "issue": {
+                        "type": "string",
+                    },
+                    "name": {
+                        "type": "string",
+                    }
+                }
+            }
+        }
 
         # wrap fields in schema template
         schema["properties"] = jam
@@ -322,7 +340,7 @@ class Connection:
             self.base_url
             + "/issues/"
             + iid
-            + ("?fields=" + fields + ",customFields(name,value(name,value))"),
+            + ("?fields=" + fields + ",customFields(name,value(name,value)),tags(id,name)"),
             headers=self.headers,
             allow_redirects=True,
             timeout=5,
@@ -342,6 +360,7 @@ class Connection:
             "updated": self.convert_ts(jas["updated"]),
             "numberInProject": jas["numberInProject"],
             "resolved": self.convert_ts(jas["resolved"]),
+            "tags": [dict(name=tag["name"], id=tag["id"], issue=jas["id"]) for tag in jas["tags"]]
         }
 
         # add custom fields to fill up
